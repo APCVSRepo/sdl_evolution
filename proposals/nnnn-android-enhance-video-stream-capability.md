@@ -1,4 +1,3 @@
-```
 # Enhance Video Stream Capability for Android
 
 * Proposal: [SDL-NNNN](NNNN-android-enhance-video-stream-capability.md)
@@ -21,14 +20,14 @@ The solution in this proposal is to refactor the class `PipedInputStream` and  t
 Currently, we send data via write function as below:
 
 ```
-    @Override
-    public void write(int oneByte) throws IOException {
-        PipedInputStream stream = target;
-        if (stream == null) {
-            throw new IOException("Pipe not connected");
-        }
-        stream.receive(oneByte);
+@Override
+public void write(int oneByte) throws IOException {
+    PipedInputStream stream = target;
+    if (stream == null) {
+        throw new IOException("Pipe not connected");
     }
+    stream.receive(oneByte);
+}
 ```
 
 There is a better way to write data to PipedInputStream: read the length of write buffer one time and write bytes in buffer via `System.arraycopy(bytes, offset, buffer, in, bytesToTransfer)` instead of byte by byte. For more code details, please refer [here](http://grepcode.com/file/repository.grepcode.com/java/root/jdk/openjdk/6-b14/java/io/PipedInputStream.java#226)
@@ -40,68 +39,68 @@ Due to the fact that we have tested, the video streaming performance is enhanced
 For `receive()` array function:
 ```
 /**
-     * Receives an array of bytes
-     * @param bytes data
-     * @param byteOffset offset of the data
-     * @param byteCount count of data
-     * @throws IOException
-     */
-    synchronized void receive(byte[] bytes, int byteOffset, int byteCount) throws IOException {
-        checkStateForReceive();
-        this.writeSide = Thread.currentThread();
-        int bytesToTransfer = byteCount;
-        while (bytesToTransfer > 0) {
-            if (this.in == this.out) {
-                awaitSpace();
-            }
-            int nextTransferBytes = 0;
-            if (this.out < this.in) {
+ * Receives an array of bytes
+ * @param bytes data
+ * @param byteOffset offset of the data
+ * @param byteCount count of data
+ * @throws IOException
+ */
+synchronized void receive(byte[] bytes, int byteOffset, int byteCount) throws IOException {
+    checkStateForReceive();
+    this.writeSide = Thread.currentThread();
+    int bytesToTransfer = byteCount;
+    while (bytesToTransfer > 0) {
+        if (this.in == this.out) {
+            awaitSpace();
+        }
+        int nextTransferBytes = 0;
+        if (this.out < this.in) {
+            nextTransferBytes = this.buffer.length - this.in;
+        } else if (this.in < this.out) {
+            if (this.in == -1) {
+                this.in = this.out = 0;
                 nextTransferBytes = this.buffer.length - this.in;
-            } else if (this.in < this.out) {
-                if (this.in == -1) {
-                    this.in = this.out = 0;
-                    nextTransferBytes = this.buffer.length - this.in;
-                } else {
-                    nextTransferBytes = this.out - this.in;
-                }
-            }
-            if (nextTransferBytes > bytesToTransfer) {
-                nextTransferBytes = bytesToTransfer;
-            }
-            System.arraycopy(bytes, byteOffset, this.buffer, this.in, nextTransferBytes);
-            bytesToTransfer -= nextTransferBytes;
-            byteOffset += nextTransferBytes;
-            this.in += nextTransferBytes;
-            if (this.in >= this.buffer.length) {
-                this.in = 0;
+            } else {
+                nextTransferBytes = this.out - this.in;
             }
         }
-        notifyAll();
+        if (nextTransferBytes > bytesToTransfer) {
+            nextTransferBytes = bytesToTransfer;
+        }
+        System.arraycopy(bytes, byteOffset, this.buffer, this.in, nextTransferBytes);
+        bytesToTransfer -= nextTransferBytes;
+        byteOffset += nextTransferBytes;
+        this.in += nextTransferBytes;
+        if (this.in >= this.buffer.length) {
+            this.in = 0;
+        }
     }
+    notifyAll();
+}
 ```
 
 For `write()` array function:
 ```
-    /**
-     * Write an array of bytes
-     * @param bytes array of data
-     * @param byteOffset offset of array
-     * @param byteCount count of data
-     * @throws IOException
-     */
-    public void write(byte[] bytes, int byteOffset, int byteCount) throws IOException {
-        if (this.sink == null) {
-            throw new IOException("Pipe not connected");
-        }else if (bytes == null) {
-            throw new NullPointerException();
-        }else if ((byteOffset < 0) || (byteOffset > bytes.length) || (byteCount < 0)
-                || (byteOffset + byteCount > bytes.length) || (byteOffset + byteCount < 0)) {
-            throw new IndexOutOfBoundsException();
-        }else if (byteCount == 0) {
-            return;
-        }
-        this.sink.receive(bytes, byteOffset, byteCount);
+/**
+ * Write an array of bytes
+ * @param bytes array of data
+ * @param byteOffset offset of array
+ * @param byteCount count of data
+ * @throws IOException
+ */
+public void write(byte[] bytes, int byteOffset, int byteCount) throws IOException {
+    if (this.sink == null) {
+        throw new IOException("Pipe not connected");
+    }else if (bytes == null) {
+        throw new NullPointerException();
+    }else if ((byteOffset < 0) || (byteOffset > bytes.length) || (byteCount < 0)
+            || (byteOffset + byteCount > bytes.length) || (byteOffset + byteCount < 0)) {
+        throw new IndexOutOfBoundsException();
+    }else if (byteCount == 0) {
+        return;
     }
+    this.sink.receive(bytes, byteOffset, byteCount);
+}
 
 ```
 
